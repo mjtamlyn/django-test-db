@@ -9,6 +9,11 @@ class Artist(models.Model):
     name = models.CharField(max_length=255)
 
 
+class Fan(models.Model):
+    name = models.CharField(max_length=255)
+    artist = models.ForeignKey(Artist)
+
+
 class Album(models.Model):
     name = models.CharField(max_length=255)
     artist = models.ForeignKey(Artist)
