@@ -5,7 +5,7 @@ from django.test import TestCase
 import mock
 
 from .factories import ArtistFactory, TrackFactory
-from .memory_manager import QuerySet, data_store
+from .memory_manager import QuerySet, data_store, get_related_queryset, add_items, clear_items, remove_items
 from .models import RecordLabel, Artist, Fan, Album, Track
 
 
@@ -72,9 +72,29 @@ class TrackUnicodeTests(TestCase):
                 with mock.patch.object(track, 'collaborators', collaborators_mock):
                     self.assertEqual(track.track_details(), correct_details)
 
-    @unittest.skip('Skip!')
+    @no_db_tests
+    @mock.patch.object(RecordLabel.objects, 'get_queryset', lambda: QuerySet(RecordLabel))
+    @mock.patch.object(Artist.objects, 'get_queryset', lambda: QuerySet(Artist))
+    @mock.patch.object(Album.objects, 'get_queryset', lambda: QuerySet(Album))
+    @mock.patch.object(Track.objects, 'get_queryset', lambda: QuerySet(Track))
+    @mock.patch.object(Artist.collaborations.related_manager_cls, 'get_queryset', lambda instance: QuerySet(Artist))
+    @mock.patch.object(Track.collaborators.related_manager_cls, 'get_queryset', get_related_queryset)
+    @mock.patch.object(Track.collaborators.related_manager_cls, '_add_items', add_items)
+    def test_using_memory_manager(self):
+        # Exactly the same code as the naive version
+        with self.assertNumQueries(0):
+            label = RecordLabel.objects.create(name='Circus Music')
+            artist = Artist.objects.create(name='Freddy the Clown')
+            album = Album.objects.create(name='All time circus classics', label=label, artist=artist)
+            track = Track.objects.create(number=1, name='Tears of a Clown', album=album)
+            other_artist = Artist.objects.create(name='Buttercup')
+            track.collaborators.add(other_artist)
+            self.assertEqual(track.track_details(), correct_details)
+        data_store.clear()
+
+    #@unittest.skip('Skip!')
     def test_performance_difference(self):
-        for test in [self.test_naive, self.test_factories, self.test_factories_build_prefetch, self.test_factories_build_mock]:
+        for test in [self.test_naive, self.test_factories, self.test_factories_build_prefetch, self.test_factories_build_mock, self.test_using_memory_manager]:
             start = time.time()
             for i in range(1000):
                 test()
@@ -83,7 +103,7 @@ class TrackUnicodeTests(TestCase):
 
 
 @no_db_tests
-@mock.patch.object(Artist.objects, 'get_query_set', lambda: QuerySet(Artist))
+@mock.patch.object(Artist.objects, 'get_queryset', lambda: QuerySet(Artist))
 class MemoryManagerSingleModelTests(TestCase):
     def tearDown(self):
         # clear out the data store
@@ -91,7 +111,7 @@ class MemoryManagerSingleModelTests(TestCase):
 
     def test_create(self):
         artist = Artist.objects.create(name='Bob')
-        self.assertEqual(Artist.objects.get_query_set().query.data_store, [artist])
+        self.assertEqual(Artist.objects.get_queryset().query.data_store, [artist])
         self.assertEqual(artist.pk, 1)
         self.assertEqual(artist.id, 1)
 
@@ -201,12 +221,60 @@ class MemoryManagerSingleModelTests(TestCase):
         ordered = Artist.objects.order_by('name', '-pk')
         self.assertSequenceEqual(ordered, [adam, bob2, bob])
 
+    def test_contains_lookup(self):
+        bob = Artist.objects.create(name='Bob')
+        bobby = Artist.objects.create(name='Bobby')
+        Artist.objects.create(name='Adam')
+        self.assertSequenceEqual(Artist.objects.filter(name__contains='ob'), [bob, bobby])
+
+    def test_in_lookup(self):
+        bob = Artist.objects.create(name='Bob')
+        bobby = Artist.objects.create(name='Bobby')
+        Artist.objects.create(name='Adam')
+        self.assertSequenceEqual(Artist.objects.filter(name__in=['Bob', 'Bobby', 'Fred']), [bob, bobby])
+
+    def test_iexact_lookup(self):
+        bob = Artist.objects.create(name='Bob')
+        Artist.objects.create(name='Adam')
+        self.assertSequenceEqual(Artist.objects.filter(name__iexact='bob'), [bob])
+
+    def test_icontains_lookup(self):
+        bob = Artist.objects.create(name='Bob')
+        bobby = Artist.objects.create(name='Bobby')
+        Artist.objects.create(name='Adam')
+        self.assertSequenceEqual(Artist.objects.filter(name__icontains='bo'), [bob, bobby])
+
+    def test_save_existing_object(self):
+        bob = Artist.objects.create(name='Bob')
+        bob.name = 'bob'
+        bob.save()
+        self.assertSequenceEqual(Artist.objects.all(), [bob])
+
+    @unittest.expectedFailure
+    def test_save_new_object(self):
+        # This is difficult to implement - it never hits the queryset.
+        bob = Artist(name='Bob')
+        bob.save()
+        self.assertSequenceEqual(Artist.objects.all(), [bob])
+
+    @unittest.expectedFailure
+    def test_delete_object(self):
+        # This is difficult to implement - it never hits the queryset.
+        bob = Artist.objects.create(name='Bob')
+        bob.delete()
+        self.assertSequenceEqual(Artist.objects.all(), [])
+
 
 @no_db_tests
-@mock.patch.object(Fan.objects, 'get_query_set', lambda: QuerySet(Fan))
-@mock.patch.object(Fan.artist, 'get_query_set', lambda instance: QuerySet(Artist))
-@mock.patch.object(Artist.objects, 'get_query_set', lambda: QuerySet(Artist))
-@mock.patch.object(Artist.fan_set, 'related_manager_cls', lambda self: RelatedQuerySet(Fan, instance=self))
+@mock.patch.object(Fan.objects, 'get_queryset', lambda: QuerySet(Fan))
+@mock.patch.object(Fan.artist, 'get_queryset', lambda instance: QuerySet(Artist))
+@mock.patch.object(Artist.objects, 'get_queryset', lambda: QuerySet(Artist))
+@mock.patch.object(Artist.fan_set.related_manager_cls, 'get_queryset', get_related_queryset)
+@mock.patch.object(Fan.fan_set.related_manager_cls, 'get_queryset', lambda instance: QuerySet(Fan))
+@mock.patch.object(Fan.friends.related_manager_cls, 'get_queryset', get_related_queryset)
+@mock.patch.object(Fan.friends.related_manager_cls, '_add_items', add_items)
+@mock.patch.object(Fan.friends.related_manager_cls, '_remove_items', remove_items)
+@mock.patch.object(Fan.friends.related_manager_cls, '_clear_items', clear_items)
 class MemoryManagerFKTests(TestCase):
     def tearDown(self):
         # clear out the data store
@@ -234,8 +302,47 @@ class MemoryManagerFKTests(TestCase):
         Fan.objects.create(name='Lottie', artist=dave)
         self.assertSequenceEqual(bob.fan_set.all(), [annie])
 
+    def test_lookups_passed_through(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        dave = Artist.objects.create(name='Dave')
+        Fan.objects.create(name='Lottie', artist=dave)
+        self.assertSequenceEqual(Fan.objects.filter(artist__name='Bob'), [annie])
 
-# TODO:
-# Related objects (M2M)
-# Save on a model instance
-# Complex Lookups (contains, in, iexact, icontains, related)
+    def test_m2m_get_empty(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        self.assertSequenceEqual(annie.friends.all(), [])
+
+    def test_m2m_create(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        lottie = annie.friends.create(name='Lottie', artist=bob)
+        self.assertSequenceEqual(annie.friends.all(), [lottie])
+        self.assertSequenceEqual(Fan.objects.all(), [annie, lottie])
+
+    def test_m2m_add(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        lottie = Fan.objects.create(name='Lottie', artist=bob)
+        annie.friends.add(lottie)
+        self.assertSequenceEqual(annie.friends.all(), [lottie])
+
+    def test_m2m_set(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        lottie = Fan.objects.create(name='Lottie', artist=bob)
+        annie.friends = [lottie]
+        self.assertSequenceEqual(annie.friends.all(), [lottie])
+        annie.friends = []
+        self.assertSequenceEqual(annie.friends.all(), [])
+
+    def test_m2m_remove(self):
+        bob = Artist.objects.create(name='Bob')
+        annie = Fan.objects.create(name='Annie', artist=bob)
+        lottie = Fan.objects.create(name='Lottie', artist=bob)
+        annie.friends = [lottie]
+        self.assertSequenceEqual(annie.friends.all(), [lottie])
+        annie.friends.remove(lottie)
+        self.assertSequenceEqual(annie.friends.all(), [])
+

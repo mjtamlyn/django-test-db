@@ -12,6 +12,10 @@ class Artist(models.Model):
 class Fan(models.Model):
     name = models.CharField(max_length=255)
     artist = models.ForeignKey(Artist)
+    friends = models.ManyToManyField('self', symmetrical=False)
+
+    def __unicode__(self):
+        return self.name
 
 
 class Album(models.Model):
