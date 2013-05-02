@@ -38,7 +38,7 @@ class TrackUnicodeTests(TestCase):
     def test_factories(self):
         with self.assertNumQueries(8):
             track = TrackFactory.create(number=1)
-            other_artist = Artist.objects.create(name='Buttercup')
+            other_artist = ArtistFactory(name='Buttercup')
             track.collaborators.add(other_artist)
             self.assertEqual(track.track_details(), correct_details)
 
@@ -69,8 +69,7 @@ class TrackUnicodeTests(TestCase):
             with mock.patch('music.factories.Track.collaborators', collaborators_mock):
                 track = TrackFactory.build()
                 track.pk = 1
-                with mock.patch.object(track, 'collaborators', collaborators_mock):
-                    self.assertEqual(track.track_details(), correct_details)
+                self.assertEqual(track.track_details(), correct_details)
 
     @no_db_tests
     @mock.patch.object(RecordLabel.objects, 'get_queryset', lambda: QuerySet(RecordLabel))
