@@ -103,6 +103,9 @@ class Query(object):
                 self.low_mark = self.low_mark + low
 
     def can_filter(self):
+        """Yeah, we can always filter. Even if Django can't.
+
+        This is probably lies actually, filter + slice is likely broken/weird."""
         return True
 
     def clear_ordering(self, force_empty=False):
@@ -115,6 +118,8 @@ class Query(object):
         return self._empty
 
     def add_ordering(self, *fields):
+        """Create a compare function we can pass to `sorted` when we execute
+        the query."""
 
         def compare(x, y):
             for field in fields:
@@ -131,6 +136,7 @@ class Query(object):
         self.ordering = compare
 
     def add_q(self, q_object):
+        """Add filter functions to be used in execute."""
         for child in q_object.children:
             if isinstance(child, Node):
                 self.add_q(child)
@@ -175,6 +181,13 @@ class Query(object):
 
 
 class QuerySet(DjangoQuerySet):
+    """Subclass of Django's QuerySet to simplify some methods.
+    
+    Generally speaking we try to use Django's qs for most methods, but some
+    things are rather more complex than they need to be for our use cases.
+    Consequently we simplify the execution functions to just call our Query
+    object in a more simple fashion.
+    """
     def __init__(self, model=None, query=None, using=None, instance=None):
         query = query or Query(model)
         super(QuerySet, self).__init__(model=model, query=query, using=None)
@@ -204,10 +217,12 @@ class QuerySet(DjangoQuerySet):
 
 
 def get_related_queryset(self):
+    """Related querysets are defined funny."""
     return QuerySet(self.model).filter(**self.core_filters)
 
 
 def add_items(self, source_field_name, target_field_name, *objs):
+    """Descriptor method we can attach to the generated RelatedObjectQuerySets."""
     data_store.setdefault((self.model, self.query_field_name), {})
     store = data_store[(self.model, self.query_field_name)]
     store.setdefault(self.instance.id, [])
@@ -215,6 +230,7 @@ def add_items(self, source_field_name, target_field_name, *objs):
 
 
 def remove_items(self, source_field_name, target_field_name, *objs):
+    """Descriptor method we can attach to the generated RelatedObjectQuerySets."""
     data_store.setdefault((self.model, self.query_field_name), {})
     store = data_store[(self.model, self.query_field_name)]
     store.setdefault(self.instance.id, [])
@@ -223,4 +239,5 @@ def remove_items(self, source_field_name, target_field_name, *objs):
 
 
 def clear_items(self, source_field_name):
+    """Descriptor method we can attach to the generated RelatedObjectQuerySets."""
     data_store[(self.model, self.query_field_name)] = {}
