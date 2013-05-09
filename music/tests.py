@@ -4,8 +4,8 @@ import unittest
 from django.test import TestCase
 import mock
 
+from memory_manager import QuerySet, data_store, get_related_queryset, add_items, clear_items, remove_items
 from .factories import ArtistFactory, TrackFactory
-from .memory_manager import QuerySet, data_store, get_related_queryset, add_items, clear_items, remove_items
 from .models import RecordLabel, Artist, Fan, Album, Track
 
 
