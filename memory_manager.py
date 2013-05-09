@@ -1,5 +1,3 @@
-import copy
-
 from django.db.models.constants import LOOKUP_SEP
 from django.db.models.query import QuerySet as DjangoQuerySet
 from django.utils.tree import Node
@@ -9,6 +7,10 @@ data_store = {}
 
 
 class Query(object):
+    """A replacement for Django's sql.Query object.
+
+    Shares a similar API to django.db.models.sql.Query. It has its own data store.
+    """
     def __init__(self, model, where=None):
         self.model = model
         data_store.setdefault(model, [])
@@ -21,32 +23,56 @@ class Query(object):
         self._empty = False
 
     def execute(self):
-        # shallow copy deliberately
-        data = copy.copy(self.data_store)
+        """Execute a query against the data store.
+
+        Work on a copy of the list so we don't accidentally change the store.
+        """
+        data = self.data_store[:]
         for func in self.where:
             data = filter(func, data)
         if self.ordering:
             data = sorted(data, cmp=self.ordering)
+        if self.low_mark and not self.high_mark:
+            data = data[self.low_mark:]
+        elif self.high_mark:
+            data = data[self.low_mark:self.high_mark]
         return data
 
     def clone(self, *args, **kwargs):
+        """Trivial clone method."""
         return self
 
     def assign_pk(self, obj):
+        """Simple counter based "primary key" allocation."""
         obj.pk = self.counter
         self.counter += 1
 
     def create(self, obj):
+        """Creates an object by adding it to the data store.
+
+        Will allocate a PK if one does not exist, but currently does nothing to
+        ensure uniqueness of your PKs if you've set one already.
+        """
         if not obj.pk:
             self.assign_pk(obj)
         self.data_store.append(obj)
 
     def delete(self):
+        """Removes objects from the data store."""
         items = self.execute()
         for item in items:
             self.data_store.remove(item)
 
     def update(self, **kwargs):
+        """Updates the objects in the data store.
+
+        The correct values may well already have been assigned, espically if
+        this triggered by instance.save() rather than queryset.update(), but
+        we'll do it again anyway just to be sure.
+
+        Should models be faffing with setattr then this is likely to break
+        things.
+        """
         data = self.execute()
         for instance in data:
             for key, value in kwargs.items():
@@ -54,12 +80,17 @@ class Query(object):
         return len(data)
 
     def has_results(self, using=None):
+        """Find out whether there's anything that matches the current query state."""
         return bool(self.execute())
 
     def get_count(self, using=None):
+        """Find how many objects match the current query state."""
         return len(self.execute())
 
     def set_limits(self, low=None, high=None):
+        """Set limits for query slicing.
+
+        This code is almost identical to Django's code."""
         if high is not None:
             if self.high_mark is not None:
                 self.high_mark = min(self.high_mark, self.low_mark + high)

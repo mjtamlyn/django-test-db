@@ -91,7 +91,7 @@ class TrackUnicodeTests(TestCase):
             self.assertEqual(track.track_details(), correct_details)
         data_store.clear()
 
-    #@unittest.skip('Skip!')
+    @unittest.skip('Skip!')
     def test_performance_difference(self):
         for test in [self.test_naive, self.test_factories, self.test_factories_build_prefetch, self.test_factories_build_mock, self.test_using_memory_manager]:
             start = time.time()
@@ -173,6 +173,15 @@ class MemoryManagerSingleModelTests(TestCase):
         Artist.objects.create(name='Bob')
         count = Artist.objects.count()
         self.assertEqual(count, 1)
+
+    def test_slice(self):
+        bob1 = Artist.objects.create(name='Bob1')
+        bob2 = Artist.objects.create(name='Bob2')
+        bob3 = Artist.objects.create(name='Bob3')
+        self.assertSequenceEqual(Artist.objects.all()[:2], [bob1, bob2])
+        self.assertSequenceEqual(Artist.objects.all()[1:2], [bob2])
+        self.assertSequenceEqual(Artist.objects.all()[1:], [bob2, bob3])
+        self.assertSequenceEqual(Artist.objects.all()[::2], [bob1, bob3])
 
     def test_get_or_create(self):
         artist, created = Artist.objects.get_or_create(name='Bob')
