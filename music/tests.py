@@ -4,7 +4,7 @@ import unittest
 from django.test import TestCase
 import mock
 
-from memory_manager import QuerySet, data_store, get_related_queryset, add_items, clear_items, remove_items
+from test_db import QuerySet, data_store, get_related_queryset, add_items, clear_items, remove_items
 from .factories import ArtistFactory, TrackFactory
 from .models import RecordLabel, Artist, Fan, Album, Track
 
@@ -79,7 +79,7 @@ class TrackUnicodeTests(TestCase):
     @mock.patch.object(Artist.collaborations.related_manager_cls, 'get_queryset', lambda instance: QuerySet(Artist))
     @mock.patch.object(Track.collaborators.related_manager_cls, 'get_queryset', get_related_queryset)
     @mock.patch.object(Track.collaborators.related_manager_cls, '_add_items', add_items)
-    def test_using_memory_manager(self):
+    def test_using_test_db(self):
         # Exactly the same code as the naive version
         with self.assertNumQueries(0):
             label = RecordLabel.objects.create(name='Circus Music')
@@ -93,7 +93,7 @@ class TrackUnicodeTests(TestCase):
 
     @unittest.skip('Skip!')
     def test_performance_difference(self):
-        for test in [self.test_naive, self.test_factories, self.test_factories_build_prefetch, self.test_factories_build_mock, self.test_using_memory_manager]:
+        for test in [self.test_naive, self.test_factories, self.test_factories_build_prefetch, self.test_factories_build_mock, self.test_using_test_db]:
             start = time.time()
             for i in range(1000):
                 test()
